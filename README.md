@@ -1,268 +1,178 @@
-# JuiceFS + Cloudflare R2
+# JuiceFS + Cloudflare R2 di macOS
 
-File system POSIX di atas Cloudflare R2. **Redis** sebagai metadata engine,
-**R2** sebagai object storage, **JuiceFS client** dalam container Linux.
-Tidak butuh macFUSE, tidak butuh reboot.
+File system POSIX di atas Cloudflare R2, ter-mount di Finder sebagai drive
+jaringan — **tanpa macFUSE, tanpa kernel extension, tanpa reboot**.
 
-## Struktur file
+Semuanya berjalan di Docker. Cukup isi kredensial R2, jalankan satu perintah,
+lalu volume muncul di Finder.
 
-| File | Isi |
+```
+Finder (macOS)
+   │  SMB
+   ▼
+┌─────────────────────────────┐        ┌──────────────┐
+│  Container jfs-client       │        │  Cloudflare  │
+│  ┌───────┐   ┌───────────┐  │ ─────► │      R2      │
+│  │ Samba │──►│  JuiceFS  │  │  data  │  (object)    │
+│  └───────┘   └─────┬─────┘  │        └──────────────┘
+└────────────────────┼────────┘
+                     │ metadata
+                     ▼
+              ┌─────────────┐
+              │    Redis    │
+              └─────────────┘
+```
+
+JuiceFS memisahkan **data** dan **metadata**. Data mentah dipecah jadi block
+4 MiB dan disimpan di R2; struktur file system (nama, direktori, permission,
+peta block) hidup di Redis. Hasilnya file system POSIX sungguhan — bukan
+sekadar bucket yang ditempelkan seperti s3fs.
+
+## Kenapa R2, bukan S3
+
+**Egress gratis.** Setiap cache miss menarik data keluar dari bucket. Kalau
+compute-mu bukan di AWS — laptop, on-prem, cloud lain — egress S3 bisa jadi
+komponen biaya terbesar. Di R2 nol.
+
+| 500 GB, baca 2 TB/bulan | Biaya/bulan |
 |---|---|
-| `docker-compose.yml` | definisi service, volume, environment |
-| `Dockerfile` | image = juicedata/mount + Samba |
-| `entrypoint.sh` | **logika startup**: format → mount → WebDAV → Samba |
-| `smb.conf` | konfigurasi Samba (tuning macOS) |
-| `.env` | kredensial R2 + SMB (jangan di-commit) |
-| `shared/` | jembatan Mac ↔ container |
-| `dumps/` | tujuan `juicefs dump` |
+| R2 | **$7,35** |
+| S3 (compute di AWS) | $11,77 |
+| S3 (compute di luar AWS) | **$182,77** |
 
-Logika startup ada di **`entrypoint.sh`**, bukan inline di compose — lebih
-mudah dibaca, bisa di-`shellcheck`, dan bebas dari kerepotan `$$` escaping
-milik compose. Setelah mengeditnya:
+## Yang kamu dapat
+
+- Volume POSIX di Finder lewat SMB, drag-and-drop seperti drive biasa
+- Cache baca lokal — pembacaan berulang ~40× lebih cepat daripada tarik ulang
+- Trash 1 hari untuk semua penghapusan, dari jalur mana pun
+- Backup metadata tiga lapis, dua di antaranya otomatis
+- Tidak ada port yang terbuka ke jaringan lokal
+
+## Prasyarat
+
+- macOS dengan **[OrbStack](https://orbstack.dev)** (disarankan) atau Docker Desktop
+- Akun Cloudflare dengan R2 aktif
+- Bucket R2 dan API token berizin **Object Read & Write**
+
+## Mulai
+
+```bash
+git clone <url-repo-ini> juicefs-lab
+cd juicefs-lab
+cp .env.example .env
+```
+
+Isi `.env`:
+
+```env
+R2_ACCOUNT_ID=         # 32 karakter hex — BUKAN URL endpoint
+R2_BUCKET=             # nama bucket
+R2_ACCESS_KEY=         # 32 karakter hex
+R2_SECRET_KEY=         # 64 karakter hex
+SMB_PASSWORD=          # ganti dari default!
+```
+
+Jalankan:
+
+```bash
+docker compose up -d
+docker compose logs -f juicefs
+```
+
+Volume otomatis di-format saat pertama kali dijalankan. Banner akan muncul:
+
+```
+==================================================
+ JuiceFS siap
+   Mount   : /mnt/jfs
+   Trash   : 1 hari
+   Backup  : tiap 1h ke R2 + saat berhenti ke /dumps
+   SMB     : smb://jfs-client.orb.local/jfs  (user: jfs)
+==================================================
+```
+
+### Mendapatkan kredensial R2
+
+1. Dashboard Cloudflare → **R2 Object Storage** → buat bucket
+2. **Manage R2 API Tokens** → **Create Account API token**
+3. Permission **Object Read & Write**, scope-kan ke bucket itu saja
+4. Salin **Access Key ID** dan **Secret Access Key** — secret hanya muncul sekali
+
+`R2_ACCOUNT_ID` hanya 32 karakter hex-nya. Jangan tempel URL endpoint lengkap —
+compose merakitnya sendiri.
+
+## Akses dari Finder
+
+Tekan **⌘K** di Finder, masukkan:
+
+```
+smb://jfs-client.orb.local/jfs
+```
+
+Pilih **Registered User**, isi kredensial dari `.env`. Volume muncul di
+`/Volumes/jfs`.
+
+Dari terminal:
+
+```bash
+mount_smbfs "//jfs:PASSWORD@jfs-client.orb.local/jfs" /tmp/jfsmnt
+```
+
+## Konfigurasi
+
+Semua lewat `.env`:
+
+| Variabel | Default | Keterangan |
+|---|---|---|
+| `R2_ACCOUNT_ID` | — | 32 hex, wajib |
+| `R2_BUCKET` | — | wajib |
+| `R2_ACCESS_KEY` | — | wajib |
+| `R2_SECRET_KEY` | — | wajib |
+| `R2_JURISDICTION` | kosong | `eu` atau `fedramp` |
+| `CACHE_SIZE` | `10240` | cache baca lokal, MiB |
+| `TRASH_DAYS` | `1` | masa simpan file terhapus |
+| `BACKUP_META` | `1h` | interval backup otomatis ke R2 |
+| `BACKUP_ON_STOP` | `true` | dump metadata saat container berhenti |
+| `KEEP_SHUTDOWN_DUMPS` | `5` | rotasi dump tersebut |
+| `ENABLE_SMB` | `true` | server Samba |
+| `ENABLE_WEBDAV` | `false` | server WebDAV (cadangan) |
+| `SMB_USER` / `SMB_PASSWORD` | `jfs` / `juicefs123` | **ganti password-nya** |
+| `META_URL` | `redis://redis:6379/2` | metadata engine |
+| `VOL_NAME` | `myjfs-r2` | nama volume JuiceFS |
+
+`CACHE_SIZE` adalah knob paling berpengaruh ke performa. `TRASH_DAYS` selalu
+direkonsiliasi ke volume yang sudah ada, bukan hanya saat format.
+
+## Struktur project
+
+| Berkas | Isi |
+|---|---|
+| `docker-compose.yml` | service, volume, environment |
+| `Dockerfile` | image `juicedata/mount` + Samba |
+| `entrypoint.sh` | logika startup dan shutdown |
+| `smb.conf` | konfigurasi Samba untuk macOS |
+| `backup-meta.sh` | dump metadata + rotasi |
+| `launchd/` | template penjadwalan backup (opsional) |
+| `dumps/` | tujuan dump metadata |
+| `shared/` | jembatan berkas macOS ↔ container |
+
+Logika startup ada di `entrypoint.sh`, bukan inline di compose — bisa
+di-`shellcheck` dan bebas dari kerepotan `$$` escaping. Setelah mengeditnya:
 
 ```bash
 docker compose up -d --build juicefs
 ```
 
-Semua nilai yang dulu hardcoded kini bisa ditimpa lewat `.env`:
-`META_URL`, `VOL_NAME`, `TRASH_DAYS`, `BACKUP_META`, `CACHE_SIZE`.
+---
 
-## Jalankan / matikan
+## Temuan penting
 
-```bash
-cd ~/juicefs-lab
+Bagian ini merangkum hal-hal yang tidak terdokumentasi dengan baik di tempat
+lain, semuanya diverifikasi langsung pada JuiceFS 1.4.0.
 
-docker compose up -d           # nyalakan
-docker compose up -d --build   # setelah edit entrypoint.sh / smb.conf
-docker compose ps              # cek status
-docker compose logs -f juicefs
-docker compose down            # matikan (data & metadata tetap ada)
-```
+### Dokumentasi JuiceFS soal batasan R2 sudah usang
 
-`entrypoint.sh` memasang trap SIGTERM yang **melepas mount lebih dulu** saat
-container dihentikan, sehingga JuiceFS sempat menuntaskan flush ke R2.
-Sebelum ini prosesnya cuma `tail -f /dev/null` yang tidak melakukan apa-apa —
-data di buffer tulis yang belum terunggah bisa hilang saat `down`.
-
-> ⚠️ **Jangan `docker compose down -v`.** Itu menghapus Redis, dan metadata
-> hilang = seluruh file system hilang meski semua object masih utuh di R2.
-> Kalau itu terjadi, bersihkan bucket dengan `juicefs destroy` (jalan normal
-> di v1.4.0) lalu format ulang. Backup dulu — lihat bagian Backup metadata.
-
-## ⚠️ Kenapa `/mnt/jfs` kosong kalau dilihat dari Mac
-
-`/mnt/jfs` adalah **FUSE mount di dalam container**, bukan direktori di macOS.
-Di Mac, path `/mnt` bahkan tidak ada sama sekali.
-
-Lewat OrbStack Finder (`~/OrbStack/docker/containers/jfs-client/mnt/jfs`) juga
-akan terlihat **kosong**. Itu normal, bukan bug: OrbStack mengekspos *layer
-filesystem* container, sedangkan FUSE mount adalah mount kernel di mount
-namespace container — bukan bagian dari filesystem. Buktinya, `/var/jfsCache`
-lewat OrbStack tetap terlihat isinya.
-
-Hasilnya identik dengan menjalankan `umount /mnt/jfs`: direktori kosong.
-File-nya hanya "ada" saat dilihat melalui lapisan FUSE.
-
-**Untuk akses dari Finder, pakai SMB** (lihat bawah).
-
-## Akses dari Finder macOS — SMB (utama)
-
-Samba jalan otomatis di port 445 bersama mount.
-
-1. Di Finder tekan **⌘K** (Go → Connect to Server)
-2. Isi: **`smb://jfs-client.orb.local/jfs`**
-3. Pilih **Registered User**, isi `SMB_USER` / `SMB_PASSWORD` dari `.env`
-   (default `jfs` / `juicefs123`)
-
-### ⚠️ JANGAN pakai `smb://localhost` di Finder
-
-Finder macOS **memblokir koneksi SMB ke `localhost`/`127.0.0.1`** — ia
-menganggapnya koneksi ke dirinya sendiri. Errornya menyesatkan:
-
-> There was a problem connecting to the server "localhost".
-> The server may not exist or it is unavailable at this time.
-
-Padahal server jalan normal. Buktinya: log Samba **tidak mencatat percobaan
-koneksi sama sekali** — permintaannya tidak pernah keluar dari macOS.
-
-`mount_smbfs` dari terminal tetap bisa pakai `localhost` karena melewati
-lapisan NetFS yang memblokir itu. Jadi kalau CLI jalan tapi Finder gagal,
-inilah penyebabnya.
-
-Solusinya: pakai nama OrbStack `jfs-client.orb.local` (stabil walau IP
-berubah) atau IP container langsung (`docker inspect jfs-client --format
-'{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`).
-
-### Hanya satu mount per share
-
-macOS menolak me-mount share SMB yang sama dua kali. Kalau sudah ter-mount
-di terminal, Finder akan gagal. Cek dengan `mount | grep smbfs`, lalu
-`umount` yang tidak dipakai.
-
-Dari terminal:
-
-```bash
-mkdir -p /tmp/jfsmnt
-mount_smbfs "//jfs:juicefs123@jfs-client.orb.local/jfs" /tmp/jfsmnt
-umount /tmp/jfsmnt
-```
-
-### Kenapa SMB, bukan WebDAV
-
-Finder macOS memperlakukan SMB sebagai volume kelas satu. WebDAV pernah
-menyebabkan seluruh isi volume terhapus di lab ini (terselamatkan `.trash`).
-
-### `--enable-xattr` itu WAJIB
-
-Ini yang paling mudah terlewat. Samba menyimpan metadata macOS lewat modul
-`streams_xattr`, yang butuh dukungan extended attribute dari filesystem.
-JuiceFS **mematikan xattr secara default** (`--enable-xattr` default `false`).
-
-Tanpa flag itu, `setxattr` gagal dengan `Errno 95: Operation not supported`,
-dan Samba jatuh ke mode membuat file `._namafile` sungguhan — mengotori
-storage dan memboroskan operasi Class A di R2.
-
-Terbukti di lab ini: sebelum flag → `._smbtest.bin` 4 KB tersimpan nyata;
-sesudah flag → tidak ada file `._` sama sekali, metadata jadi xattr.
-
-### Proteksi `.trash`
-
-`smb.conf` memakai `veto files = /.trash/` sehingga Finder **tidak bisa
-melihat atau menghapus** isi trash. Ini jaring pengaman terakhir di R2 —
-jangan dilepas.
-
-## Trash
-
-Di `.env`:
-
-```env
-TRASH_DAYS=1     # default — berapa hari file terhapus disimpan
-```
-
-Terapkan dengan `docker compose up -d juicefs`. Nilainya **selalu
-direkonsiliasi**, termasuk ke volume yang sudah ada — entrypoint memanggil
-`juicefs config --trash-days` kalau nilainya berbeda. Banner saat start
-menampilkan nilai yang berlaku.
-
-(`--trash-days` di `juicefs format` hanya berlaku saat pembuatan volume. Tanpa
-rekonsiliasi ini, mengubah `.env` akan diam-diam diabaikan pada volume lama —
-lebih membingungkan daripada error.)
-
-### Semua jalur hapus tertangkap
-
-Diuji langsung: menghapus lewat **terminal di container** maupun lewat
-**SMB dari Mac** sama-sama masuk `.trash`. JuiceFS mencegatnya di lapisan
-filesystem, bukan protokol.
-
-Format nama di trash: `<inode-induk>-<inode>-<nama-asli>`.
-
-### Trash tidak terlihat dari Finder — disengaja
-
-`smb.conf` memakai `veto files = /.trash/`. Finder tidak bisa melihat, membuka,
-apalagi menghapus isinya. Ini jaring pengaman terakhir; kalau bisa dijangkau
-Finder, satu operasi ceroboh bisa menghapusnya bersamaan dengan datanya.
-
-Memulihkan file harus lewat container:
-
-```bash
-docker compose exec juicefs find /mnt/jfs/.trash -type f
-docker compose exec juicefs \
-  mv /mnt/jfs/.trash/2026-07-29-01/1-1026-namafile.txt /mnt/jfs/namafile.txt
-```
-
-### Yang perlu diingat
-
-- File di trash **tetap memakan storage R2** selama masa simpan. Menghapus
-  500 MB tidak langsung mengurangi tagihan.
-- `TRASH_DAYS=0` mematikan trash — file hilang permanen tanpa cara memulihkan.
-  Entrypoint akan memberi peringatan kalau kamu menyetelnya.
-- Trash inilah yang menyelamatkan 671 MB saat Finder lewat WebDAV menghapus
-  seluruh isi volume di lab ini.
-
-## Saklar layanan
-
-Di `.env`:
-
-```env
-ENABLE_SMB=true       # jalur utama Finder
-ENABLE_WEBDAV=false   # cadangan, default MATI
-```
-
-Terapkan dengan `docker compose up -d juicefs`. Banner saat start menampilkan
-status masing-masing, jadi tidak perlu menebak.
-
-Menerima `true` / `1` / `yes` / `on` (huruf besar-kecil bebas).
-
-### WebDAV — cadangan yang sengaja dimatikan
-
-Dimatikan karena SMB menangani Finder dengan lebih baik, dan WebDAV yang
-menganggur cuma memakan satu proses. Hidupkan kalau SMB bermasalah:
-
-```bash
-# .env → ENABLE_WEBDAV=true
-docker compose up -d juicefs
-curl -u jfs:jfs -X PROPFIND -H "Depth: 1" http://jfs-client.orb.local:9007/
-```
-
-⚠️ Finder macOS pernah menghapus seluruh isi volume lewat WebDAV di lab ini
-(terselamatkan `.trash`). Pakai untuk baca/unduh saja — jangan menulis file
-besar dari Finder lewat jalur ini.
-
-## Titik akses
-
-| Apa | Di mana |
-|---|---|
-| Shell di client | `docker compose exec juicefs bash` |
-| Mount point | `/mnt/jfs` (**hanya di dalam container**) |
-| Finder macOS | `smb://jfs-client.orb.local/jfs` via ⌘K |
-| Bucket R2 | dashboard Cloudflare → R2 → `juicefs` → prefix `myjfs-r2/` |
-| Redis metadata | `docker compose exec redis redis-cli -n 2` |
-| Folder Mac ↔ container | `~/juicefs-lab/shared` → `/shared` |
-| Backup metadata | `~/juicefs-lab/dumps` → `/dumps` |
-
-Taruh file dari macOS di `shared/`, lalu di dalam container
-`cp /shared/xxx /mnt/jfs/`.
-
-## Konfigurasi
-
-Semua di `.env` (sudah masuk `.gitignore`, jangan di-commit):
-
-```env
-R2_ACCOUNT_ID=<32 karakter hex, BUKAN URL>
-R2_BUCKET=juicefs
-R2_ACCESS_KEY=<Access Key ID>
-R2_SECRET_KEY=<Secret Access Key>
-R2_JURISDICTION=          # kosong, atau "eu" / "fedramp"
-CACHE_SIZE=10240          # MiB — knob performa paling berpengaruh
-```
-
-Yang dijalankan compose di balik layar:
-
-```bash
-juicefs format \
-  --storage s3 \
-  --bucket https://<ACCOUNT_ID>.r2.cloudflarestorage.com/<BUCKET> \
-  --access-key ... --secret-key ... --trash-days 1 \
-  redis://redis:6379/2 myjfs-r2
-
-juicefs mount redis://redis:6379/2 /mnt/jfs \
-  --cache-dir /var/jfsCache --cache-size $CACHE_SIZE \
-  --backup-meta 1h --enable-xattr --background
-```
-
-R2 dipakai lewat `--storage s3` (bukan tipe khusus), format path-style.
-
-### Kredensial R2
-
-1. Dashboard Cloudflare → **R2 Object Storage** → buat bucket
-2. **Manage R2 API Tokens** → **Create Account API token**
-3. Permission: **Object Read & Write**, scope-kan ke bucket itu saja
-4. Salin **Access Key ID** (32 hex) dan **Secret Access Key** (64 hex) —
-   secret hanya muncul sekali
-
-## Soal "batasan R2" — dokumentasi JuiceFS sudah USANG
-
-Dokumentasi resmi JuiceFS (termasuk di tag v1.4.0) masih memuat peringatan ini:
+Dokumentasi resmi JuiceFS — termasuk di tag v1.4.0 — masih menyatakan:
 
 > Cloudflare R2 `ListObjects` API is not fully S3 compatible (result list is not
 > sorted), so some features of JuiceFS do not work. For example, `juicefs gc`,
@@ -270,242 +180,172 @@ Dokumentasi resmi JuiceFS (termasuk di tag v1.4.0) masih memuat peringatan ini:
 > `juicefs mount`, you need to disable automatic-backup by adding
 > `--backup-meta 0`.
 
-**Peringatan itu tidak lagi berlaku untuk v1.4.0.**
+**Peringatan itu tidak lagi berlaku.**
+[PR #6389](https://github.com/juicedata/juicefs/pull/6389) — *"allow unordered
+list in fsck/backup/gc/destroy commands"* — di-merge 26 September 2025 dan
+sudah masuk v1.4.0 (438 commit di belakangnya). Dokumentasinya tidak pernah
+diperbarui.
 
-| | |
-|---|---|
-| Issue [#3144](https://github.com/juicedata/juicefs/issues/3144) | ditutup COMPLETED, 26 Sep 2025 |
-| PR [#6389](https://github.com/juicedata/juicefs/pull/6389) | *"allow unordered list in fsck/backup/gc/destroy commands"* — merged 26 Sep 2025 |
-| File yang diubah | `gc.go`, `fsck.go`, `destroy.go`, `format.go`, `vfs/backup.go` |
-| Masuk v1.4.0? | ya — v1.4.0 berjarak 438 commit di depan fix itu |
-| Dokumentasi | **tidak pernah diperbarui** |
-
-### Hasil pengujian langsung (28 Juli 2026, juicefs 1.4.0 + R2)
+Hasil pengujian langsung:
 
 | Yang diuji | Hasil |
 |---|---|
 | ListObjectsV2 — 476 key, 1 halaman | ✅ terurut benar |
-| ListObjectsV2 — 1076 key, **2 halaman** | ✅ terurut sempurna, 1076 unik, tanpa duplikat |
+| ListObjectsV2 — 1076 key, **2 halaman** | ✅ terurut, 1076 unik, tanpa duplikat |
 | `juicefs fsck` | ✅ 474 block, 345 slice, tanpa error |
-| `juicefs gc` | ✅ 0 leaked |
-| `juicefs gc --delete` | ✅ jalan, data utuh (checksum identik) |
+| `juicefs gc` / `gc --delete` | ✅ 0 leaked, data utuh |
 | `juicefs sync` | ✅ 20 object, 0 gagal |
 | `juicefs destroy` | ✅ 479 object terhapus, bucket jadi 0 B |
-| `--backup-meta 1h` | ✅ `dump-2026-07-28-175943.json.gz` muncul di R2 setelah 8 menit |
+| `--backup-meta 1h` | ✅ dump muncul di R2 setelah 8 menit |
 
-Kesimpulan: **perlakukan R2 sebagai object storage biasa.** Tidak ada perintah
-yang perlu dihindari.
+Perlakukan R2 sebagai object storage biasa. Tidak ada perintah yang perlu
+dihindari, dan `--backup-meta 0` tidak diperlukan.
 
-### Yang tetap perlu diingat
+Catatan: Cloudflare tidak pernah *menjanjikan* urutan leksikografis di
+dokumentasinya. Yang terbukti di atas adalah perilaku saat ini, bukan kontrak.
 
-Cloudflare **tidak pernah menjanjikan** urutan leksikografis di dokumentasinya —
-mereka hanya menyatakan ListObjectsV2 "terimplementasi". Jadi yang terbukti di
-atas adalah *perilaku hari ini*, bukan *kontrak*. Verifikasi ulang setelah
-upgrade JuiceFS atau perubahan besar di R2.
+### `--enable-xattr` wajib kalau memakai Samba
 
-Pengujian juga memakai pola key seragam (`chunks/0/25/25117_0_8`). Laporan
-komunitas soal urutan aneh di R2 mungkin terkait karakter khusus atau delimiter
-yang tidak muncul di pola JuiceFS.
+Samba menyimpan metadata macOS lewat modul `streams_xattr`, yang butuh
+dukungan extended attribute dari filesystem. **JuiceFS mematikan xattr secara
+default.**
 
-## Backup metadata — dua lapis
+Tanpa flag itu, `setxattr` gagal dengan `Errno 95: Operation not supported`,
+dan Samba jatuh ke mode membuat berkas `._namafile` sungguhan — mengotori
+storage dan memboroskan operasi Class A di R2.
 
-### Lapis 1 — otomatis ke R2 (tiap 1 jam)
+| | Tanpa `--enable-xattr` | Dengan |
+|---|---|---|
+| Salin 1 berkas dari Finder | `._namafile` 4 KB ikut tersimpan | tidak ada |
+| 10.000 berkas | 10.000 object sampah | 0 |
+
+### Finder macOS memblokir `smb://localhost`
+
+macOS menganggapnya koneksi ke dirinya sendiri dan memblokirnya di lapisan
+NetFS. Errornya menyesatkan:
+
+> There was a problem connecting to the server "localhost".
+> The server may not exist or it is unavailable at this time.
+
+Padahal server berjalan normal — log Samba tidak mencatat percobaan koneksi
+sama sekali, karena permintaannya tidak pernah keluar dari macOS.
+
+`mount_smbfs` dari terminal tetap bisa pakai `localhost` karena melewati
+lapisan itu. **Gejala khasnya: CLI jalan, Finder gagal.**
+
+Solusinya memakai nama host OrbStack (`jfs-client.orb.local`) atau IP container.
+
+### `/mnt/jfs` akan terlihat kosong dari macOS
+
+`/mnt/jfs` adalah FUSE mount **di dalam container**. Di macOS, path `/mnt`
+bahkan tidak ada.
+
+Lewat file browser OrbStack (`~/OrbStack/docker/containers/jfs-client/mnt/jfs`)
+juga terlihat kosong. Itu normal: OrbStack mengekspos *layer filesystem*
+container, sedangkan FUSE mount adalah mount kernel di mount namespace —
+bukan bagian dari filesystem. Sebagai pembanding, `/var/jfsCache` tetap
+terlihat isinya.
+
+Bind mount juga tidak menolong. Mount FUSE di dalam folder yang di-bind dari
+macOS tetap tidak tembus, karena bind mount mengalir satu arah: macOS → VM →
+container. Satu-satunya jalan keluar adalah membagikannya lewat protokol
+jaringan — itulah fungsi Samba di sini.
+
+### SMB lebih aman daripada WebDAV untuk Finder
+
+JuiceFS menyediakan server WebDAV bawaan, dan Finder bisa me-mount-nya. Tapi
+dalam pengujian, Finder lewat WebDAV pernah **menghapus seluruh isi volume**
+saat operasi penyalinan berkas besar. Semuanya bisa dipulihkan dari `.trash`,
+tapi itu bukan risiko yang layak diambil.
+
+Apple memakai SMB sebagai protokol utama macOS, jadi Finder memperlakukannya
+sebagai volume kelas satu. WebDAV di repo ini default-nya **mati**, tersedia
+sebagai cadangan lewat `ENABLE_WEBDAV=true`.
+
+---
+
+## Backup metadata
+
+Metadata adalah titik kegagalan tunggal. Kalau Redis hilang, data di R2 masih
+utuh tapi berubah jadi blok anonim yang tidak bisa dirangkai kembali.
+
+Repo ini memasang tiga lapis:
+
+### Lapis 1 — ke R2, tiap jam
 
 Ditangani JuiceFS sendiri lewat `--backup-meta 1h`. Tersimpan ter-gzip di
-`myjfs-r2/meta/`, rotasi berjenjang otomatis. Tidak perlu diapa-apakan.
+`<volume>/meta/` dengan rotasi berjenjang otomatis.
 
-### Lapis 2 — dump otomatis saat container berhenti
+### Lapis 2 — ke disk lokal, saat container berhenti
 
 Setiap `docker compose down` / `stop`, entrypoint mem-`juicefs dump` ke
-`dumps/shutdown-YYYYMMDD-HHMMSS.json.gz` sebelum keluar.
+`dumps/shutdown-YYYYMMDD-HHMMSS.json.gz`.
 
-Kenapa perlu: `--backup-meta` hanya jalan tiap 1 jam. Kalau container dimatikan
-59 menit setelah backup terakhir, perubahan metadata di jendela itu **cuma ada
-di Redis**. Selama volume `redis-data` utuh tidak masalah — tapi kalau rusak
-atau kena `down -v`, perubahan itu hilang dan file yang dibuat di jendela itu
-jadi object yatim di R2.
+Ini menutup jendela antara backup otomatis terakhir dan saat container mati.
+Dijalankan **setelah** umount supaya menangkap kondisi final, dengan
+`timeout 60` agar tidak menahan `stop_grace_period`.
 
-```env
-BACKUP_ON_STOP=true        # matikan dengan false
-KEEP_SHUTDOWN_DUMPS=5      # rotasi, simpan 5 terbaru
-```
+Terukur: `compose stop` 0,31 detik, `compose down` penuh 0,89 detik.
 
-Dijalankan **setelah** umount supaya menangkap kondisi final. Diberi
-`timeout 60` agar tidak menahan shutdown melebihi `stop_grace_period`.
-Kalau Redis sudah mati duluan, gagal dengan peringatan — tidak menggantung.
-
-Diuji: `compose stop` 0,31 detik, `compose down` penuh 0,89 detik, keduanya
-menghasilkan dump valid.
-
-### Lapis 3 — dump manual / terjadwal
-
-`backup-meta.sh`
-
-`backup-meta.sh` — jalankan kapan saja:
+### Lapis 3 — manual atau terjadwal
 
 ```bash
 ./backup-meta.sh          # backup sekarang
 tail dumps/backup.log     # riwayat
 ```
 
-Kenapa perlu: lapis 1 tersimpan di **bucket yang sama** dengan datanya. Kalau
-akun R2 bermasalah atau bucket terhapus, backup ikut hilang.
-
-Retensi 7 harian + 4 mingguan (~5 KB per file). Skrip **gagal keras** kalau
+Retensi 7 harian + 4 mingguan (~5 KB per berkas). Skrip **gagal keras** kalau
 container mati — tercatat di log dengan exit code 1, dan backup lama tidak
-tertimpa. Dump juga diverifikasi berisi `FSTree` + `Setting` sebelum
+tertimpa. Isi dump juga diverifikasi mengandung `FSTree` + `Setting` sebelum
 menggantikan yang lama.
 
-> **Belum dijadwalkan otomatis.** Template launchd tersedia di
-> `launchd/com.juicefs.lab.backup.plist` — lihat `launchd/README.md` untuk
-> cara memasangnya kalau nanti dibutuhkan. Saat ini tidak ada agent yang
-> terdaftar di sistem.
+Template launchd untuk penjadwalan harian tersedia di `launchd/` — lihat
+`launchd/README.md`. Tidak dipasang secara default.
 
 ### Memulihkan
 
-Prosedur lengkap ada di **`dumps/CARA-RESTORE.md`** — ditaruh di sana supaya
-mudah ditemukan saat panik.
+Prosedur lengkap ada di [`dumps/CARA-RESTORE.md`](dumps/CARA-RESTORE.md).
 
-
-Sudah **otomatis**: mount memakai `--backup-meta 1h`, JuiceFS mem-backup
-metadata ke `myjfs-r2/meta/` di R2 tiap jam dan merotasi yang lama sendiri.
-Terverifikasi jalan.
-
-Untuk lapis kedua (jaga-jaga kalau akun R2 bermasalah), dump lokal berkala:
+Ringkasnya:
 
 ```bash
-docker compose exec juicefs \
-  juicefs dump redis://redis:6379/2 /dumps/meta-$(date +%F).json
+juicefs load redis://redis:6379/2 dump.json
+juicefs config redis://redis:6379/2 --secret-key "$R2_SECRET_KEY"   # ← WAJIB
 ```
 
-### Prosedur pemulihan — sudah diuji
+Langkah kedua paling mudah terlewat. `juicefs dump` **selalu** membuang secret
+key demi keamanan (`Secret key is removed for the sake of safety`), jadi tanpa
+langkah itu pemulihan akan tampak gagal padahal hanya kurang kredensial.
+
+## Trash
+
+`TRASH_DAYS=1` berlaku untuk **semua jalur penghapusan** — Finder, terminal,
+aplikasi mana pun. JuiceFS mencegatnya di lapisan filesystem, bukan protokol.
+
+Format nama: `<inode-induk>-<inode>-<nama-asli>`.
+
+Trash sengaja **disembunyikan dari Finder** lewat `veto files = /.trash/` di
+`smb.conf`. Ini jaring pengaman terakhir; kalau bisa dijangkau Finder, satu
+operasi ceroboh bisa menghapusnya bersamaan dengan datanya.
+
+Memulihkan berkas lewat container:
 
 ```bash
-# 1. Restore metadata ke database kosong
-juicefs load redis://redis:6379/5 /dumps/meta-2026-07-28.json
-
-# 2. Pasang ulang secret key — WAJIB, dump sengaja membuangnya
-juicefs config redis://redis:6379/5 --secret-key <R2_SECRET_KEY>
-
-# 3. Mount seperti biasa
-juicefs mount redis://redis:6379/5 /mnt/restore --enable-xattr -d
+docker compose exec juicefs find /mnt/jfs/.trash -type f
+docker compose exec juicefs mv /mnt/jfs/.trash/<...>/<berkas> /mnt/jfs/
 ```
 
-Langkah 2 paling mudah terlewat. `juicefs dump` selalu membuang secret key
-(`Secret key is removed for the sake of safety`), jadi tanpa langkah itu restore
-akan terlihat gagal padahal cuma kurang kredensial.
-
-Untuk pemakaian serius: pindahkan Redis ke instance dengan persistence +
-replika, bukan single container seperti di sini.
-
-## Perintah JuiceFS penting
-
-Dari dalam container (`docker compose exec juicefs bash`):
-
-```bash
-META="redis://redis:6379/2"
-
-juicefs status $META           # info volume, sesi client aktif
-juicefs bench /mnt/jfs -p 4    # benchmark
-juicefs profile /mnt/jfs       # ← operasi FUSE real-time, alat debug terbaik
-juicefs warmup /mnt/jfs/data   # paksa isi cache lokal
-juicefs info /mnt/jfs/file     # lihat chunk/slice/block sebuah file
-juicefs config $META           # lihat / ubah konfigurasi volume
-juicefs dump $META /dumps/m.json   # backup metadata
-
-# Semua perintah di atas JALAN NORMAL di R2 (v1.4.0) — sudah diuji
-```
-
-## Eksperimen yang layak dicoba
-
-### 1. Lihat file dipecah jadi block
-```bash
-dd if=/dev/urandom of=/mnt/jfs/a.bin bs=1M count=20
-juicefs info /mnt/jfs/a.bin
-```
-Lalu buka dashboard R2 → bucket `juicefs` → prefix `myjfs-r2/chunks/`.
-Ada 5 object 4 MiB. Nama object = `<sliceID>_<indexBlock>_<ukuranByte>`.
-
-### 2. Buktikan copy-on-write
-```bash
-dd if=/dev/urandom of=/mnt/jfs/a.bin bs=1k count=1 seek=5000 conv=notrunc
-```
-Cek R2 lagi: block lama **tidak berubah**, muncul object kecil baru (slice 2).
-Overwrite tidak pernah menimpa object — ia menumpuk slice.
-
-### 3. Ukur efek cache (paling penting)
-```bash
-# baca dingin
-docker compose stop juicefs
-docker run --rm -v juicefs-lab_jfs-cache:/c alpine rm -rf /c/
-docker compose up -d juicefs && sleep 9
-docker compose exec juicefs bash -c 'time md5sum /mnt/jfs/a.bin'
-
-# baca hangat
-docker compose exec juicefs bash -c 'time md5sum /mnt/jfs/a.bin'
-```
-
-### 4. Amati operasi FUSE langsung
-Dua terminal. A: `juicefs profile /mnt/jfs`. B: jalankan `cp`, `ls -R`, `dd`.
-Cara tercepat memahami kenapa banyak file kecil itu mahal — tiap file kecil
-= minimal 1 Class A operation di R2.
-
-### 5. Metadata itu cuma database biasa
-```bash
-docker compose exec redis redis-cli -n 2 --scan --count 20 | head -30
-docker compose exec redis redis-cli -n 2 dbsize
-```
-Buat file baru, jalankan lagi, lihat key bertambah.
-
-## Angka nyata dari mesin ini
-
-MacBook Apple Silicon, OrbStack, R2 (default jurisdiction), koneksi Indonesia:
-
-| | Hasil |
-|---|---|
-| Tulis 20 MiB ke R2 | 2.79 s (~7.5 MB/s) |
-| Baca 20 MiB dingin dari R2 | 2.34 s (~8.6 MB/s) |
-| Baca 20 MiB dari cache lokal | 0.056 s (~357 MB/s) |
-
-Selisih dingin vs hangat: **42×**. Di JuiceFS, performa nyaris seluruhnya
-ditentukan cache hit rate — bukan kecepatan object storage. Itu sebabnya
-`CACHE_SIZE` adalah knob paling berharga di `.env`.
-
-~7–8 MB/s wajar untuk koneksi tunggal ke R2 dari Indonesia. Untuk naik,
-tambah paralelisme — bukan masalah R2-nya.
-
-## Biaya
-
-R2: storage $0.015/GB-bulan, Class A (tulis/list) $4.50/juta,
-Class B (baca) $0.36/juta, **egress gratis**.
-Gratis 10 GB storage + 1 juta Class A + 10 juta Class B per bulan.
-
-- Tulis 1 TB dengan block 4 MiB ≈ 262 ribu PUT ≈ $1.18 Class A
-- Banyak file kecil = banyak Class A → biaya operasi bisa melebihi storage
-- Blok lebih besar (`--block-size 16384`, satuan KiB) memangkas jumlah operasi,
-  tapi menambah read amplification saat random read. Ukur dulu, jangan asal.
-  Block size hanya bisa diatur saat `format`, tidak bisa diubah belakangan.
-
-Egress gratis adalah alasan utama R2 cocok untuk JuiceFS — setiap cache miss
-menarik data keluar bucket. Di S3 itu ~$90/TB kalau compute-mu bukan di AWS.
+Berkas di trash **tetap memakan storage R2** selama masa simpan.
 
 ## Keamanan jaringan
 
 Compose ini **sengaja tidak mem-publish port SMB (445) maupun WebDAV (9007)**.
-Keduanya tetap terjangkau dari macOS lewat routing OrbStack di
-`jfs-client.orb.local`, tanpa membuka apa pun ke jaringan WiFi.
+Keduanya tetap terjangkau dari macOS lewat routing OrbStack, tanpa membuka
+apa pun ke jaringan lokal. Redis diikat ke `127.0.0.1` saja.
 
-Redis diikat ke `127.0.0.1:6380` saja.
-
-### Kenapa ini penting
-
-Docker mengikat port ke **semua interface** kalau ditulis `"445:445"`.
-Di lab ini pernah terjadi: ketiga port (445, 9007, 6380) terbuka ke seluruh
-WiFi. Yang paling berbahaya justru **Redis — tanpa password sama sekali**.
-Siapa pun di jaringan yang sama bisa menghapus metadata, dan semua data di R2
-langsung jadi blok anonim yang tak bisa dirangkai kembali.
-
-Kalau suatu saat kamu perlu mem-publish port, selalu ikat ke loopback:
+Docker mengikat ke **semua interface** kalau ditulis `"445:445"` — termasuk
+Wi-Fi. Yang paling berbahaya adalah Redis, karena tanpa password sama sekali:
+siapa pun di jaringan yang sama bisa menghapus seluruh metadata.
 
 ```yaml
 ports:
@@ -513,22 +353,121 @@ ports:
   - "9007:9007"             # SALAH — terbuka ke seluruh LAN
 ```
 
-Cek paparan kapan saja:
+Periksa paparan kapan saja:
 
 ```bash
 LANIP=$(ipconfig getifaddr en0)
-for p in 445 9007 6380; do nc -z -G 2 $LANIP $p && echo "$p TERBUKA" || echo "$p tertutup"; done
+for p in 445 9007 6380; do
+  nc -z -G 2 $LANIP $p && echo "$p TERBUKA" || echo "$p tertutup"
+done
 ```
 
-### Pengerasan lanjutan yang belum dilakukan
+Belum dikeraskan: password SMB default masih lemah (ganti di `.env`), dan
+Redis belum memakai `requirepass` — aman selama hanya loopback.
 
-- Password SMB masih `juicefs123` — ganti di `.env`
-- Redis belum pakai `requirepass` (aman selama hanya loopback)
+## Performa
 
-## Catatan
+MacBook Apple Silicon, OrbStack, R2 default jurisdiction, koneksi rumahan
+Indonesia:
 
-- Redis lab pakai port **6380** karena 6379 sudah dipakai Redis-nya Laravel Herd.
-- Volume R2 memakai **Redis DB 2**. DB 1 sengaja dikosongkan (bekas MinIO).
-- `.env` berisi kredensial dan sudah masuk `.gitignore`.
-- `--trash-days 1`: file terhapus mampir dulu ke `/mnt/jfs/.trash` selama 1 hari
-  dan **tetap memakan storage R2** selama itu.
+| | Hasil |
+|---|---|
+| Tulis 20 MiB ke R2 | 2,79 s (~7,5 MB/s) |
+| Baca 20 MiB dingin dari R2 | 2,34 s (~8,6 MB/s) |
+| **Baca 20 MiB dari cache lokal** | **0,056 s (~357 MB/s)** |
+| Stat berkas (metadata) | 29.557 ops/s |
+
+Selisih baca dingin vs hangat: **42×**. Performa JuiceFS nyaris seluruhnya
+ditentukan cache hit rate, bukan kecepatan object storage — itu sebabnya
+`CACHE_SIZE` adalah pengaturan paling berharga.
+
+Perhatikan juga `Stat berkas`: operasi metadata tetap ngebut walau data ada di
+seberang lautan, karena dilayani Redis lokal. Inilah keuntungan arsitektur
+pemisahan data/metadata yang tidak bisa diberikan s3fs.
+
+## Biaya
+
+R2: storage $0,015/GB-bulan, Class A (tulis/list) $4,50/juta, Class B (baca)
+$0,36/juta, **egress gratis**. Gratis 10 GB + 1 juta Class A + 10 juta Class B
+per bulan.
+
+Pada skala ratusan GB, free tier operasi menelan hampir semua pembacaan —
+praktis kamu hanya membayar storage.
+
+Yang perlu diperhatikan: **banyak berkas kecil**. Tiap berkas < 4 MiB tetap
+jadi minimal satu object. Mengunggah 5 juta berkas kecil ≈ $19 sekali bayar
+untuk operasi Class A. Blok lebih besar (`--block-size`, hanya bisa diatur saat
+format) memangkas jumlah operasi tapi menambah read amplification.
+
+## Perintah berguna
+
+```bash
+docker compose exec juicefs bash        # masuk container
+META="redis://redis:6379/2"
+
+juicefs status $META            # info volume & sesi aktif
+juicefs profile /mnt/jfs        # operasi FUSE real-time — alat debug terbaik
+juicefs bench /mnt/jfs -p 4     # benchmark
+juicefs info /mnt/jfs/berkas    # lihat chunk/slice/block
+juicefs warmup /mnt/jfs/data    # paksa isi cache
+juicefs gc $META --compact      # kompaksi slice terfragmentasi
+```
+
+Memantau pertumbuhan metadata:
+
+```bash
+docker compose exec redis redis-cli info memory | grep used_memory_human
+```
+
+## Troubleshooting
+
+**Finder gagal konek, error "server may not exist"**
+Pakai `smb://jfs-client.orb.local/jfs`, bukan `localhost`. Kalau masih gagal,
+hapus entri `localhost` bertipe *network password* di Keychain Access.
+
+**Finder gagal padahal `mount_smbfs` berhasil**
+macOS menolak me-mount share SMB yang sama dua kali. Cek `mount | grep smbfs`
+lalu `umount` yang tidak dipakai.
+
+**Muncul berkas `._namafile` di storage**
+`--enable-xattr` tidak aktif. Periksa proses mount di container.
+
+**`/mnt/jfs` kosong dari macOS**
+Normal — lihat bagian Temuan penting.
+
+**Container gagal start**
+`docker compose logs juicefs`. Kalau `.env` kurang lengkap, compose berhenti
+dengan pesan variabel mana yang kosong.
+
+## Batasan yang perlu diketahui
+
+**Redis menyimpan metadata di RAM**, sekitar 200 byte per berkas. Untuk jutaan
+berkas ini jadi mahal:
+
+| Jumlah berkas | RAM Redis |
+|---|---|
+| 100.000 | ~20 MB |
+| 1 juta | ~200 MB |
+| 10 juta | ~2 GB |
+
+Di atas itu, pertimbangkan **PostgreSQL** — metadata pindah ke disk dengan
+RAM proses tetap. Konsekuensinya 2,6–3,9× lebih lambat untuk operasi tulis
+metadata (terukur, dengan durabilitas disetarakan). Ganti lewat `META_URL`.
+
+**Redis di sini satu container tanpa replika.** Untuk pemakaian serius,
+pindahkan ke instance dengan persistence dan replikasi yang benar.
+
+**Random write intensif bukan kekuatan JuiceFS.** Overwrite membuat slice baru
+(copy-on-write), dan fragmentasi memperlambat pembacaan sampai compaction
+berjalan. Cocok untuk write-once-read-many: dataset, arsip, media, backup.
+
+**Jangan `docker compose down -v`.** Itu menghapus volume Redis dan seluruh
+file system hilang meski object masih utuh di R2. `docker compose down` biasa
+aman — sudah diverifikasi menjaga metadata identik sampai level daftar key.
+
+## Rujukan
+
+- [Dokumentasi JuiceFS](https://juicefs.com/docs/community/introduction/)
+- [Arsitektur JuiceFS](https://juicefs.com/docs/community/architecture)
+- [Cloudflare R2](https://developers.cloudflare.com/r2/)
+- [OrbStack](https://orbstack.dev)
