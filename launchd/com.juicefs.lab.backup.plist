@@ -8,11 +8,11 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/rizkirmdhn/juicefs-lab/backup-meta.sh</string>
+        <string>__LAB_DIR__/backup-meta.sh</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/rizkirmdhn/juicefs-lab</string>
+    <string>__LAB_DIR__</string>
 
     <!-- Setiap hari pukul 12:00. Kalau Mac tertidur saat jadwal, launchd
          menjalankannya begitu Mac bangun. -->
@@ -29,9 +29,9 @@
     <false/>
 
     <key>StandardOutPath</key>
-    <string>/Users/rizkirmdhn/juicefs-lab/dumps/launchd.log</string>
+    <string>__LAB_DIR__/dumps/launchd.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/rizkirmdhn/juicefs-lab/dumps/launchd.log</string>
+    <string>__LAB_DIR__/dumps/launchd.log</string>
 
     <!-- docker CLI ada di /usr/local/bin (OrbStack) -->
     <key>EnvironmentVariables</key>

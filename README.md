@@ -165,8 +165,8 @@ Semua lewat `.env`:
 | `KEEP_SHUTDOWN_DUMPS` | `5` | rotasi dump tersebut |
 | `ENABLE_SMB` | `true` | server Samba |
 | `ENABLE_WEBDAV` | `false` | server WebDAV (cadangan) |
-| `SMB_USER` / `SMB_PASSWORD` | `jfs` / `juicefs123` | **ganti password-nya** |
-| `WEBDAV_USER` / `WEBDAV_PASSWORD` | `jfs` / `jfs` | dipakai kalau WebDAV menyala |
+| `SMB_USER` / `SMB_PASSWORD` | `jfs` / — | **wajib diisi** |
+| `WEBDAV_USER` / `WEBDAV_PASSWORD` | `jfs` / — | dipakai kalau WebDAV menyala |
 | `WEBDAV_ADDR` | `0.0.0.0:9007` | alamat listen WebDAV |
 | `META_URL` | `redis://redis:6379/2` | metadata engine |
 | `VOL_NAME` | `myjfs-r2` | nama volume JuiceFS |

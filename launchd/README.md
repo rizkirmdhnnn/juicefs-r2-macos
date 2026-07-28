@@ -25,8 +25,9 @@ cd ~/juicefs-lab && ./backup-meta.sh
 ```bash
 cd ~/juicefs-lab
 
-# 1. Salin ke LaunchAgents (launchd hanya membaca dari sana)
-cp launchd/com.juicefs.lab.backup.plist ~/Library/LaunchAgents/
+# 1. Salin sambil mengganti placeholder path dengan lokasi folder ini
+sed "s|__LAB_DIR__|$PWD|g" launchd/com.juicefs.lab.backup.plist \
+  > ~/Library/LaunchAgents/com.juicefs.lab.backup.plist
 
 # 2. Validasi
 plutil -lint ~/Library/LaunchAgents/com.juicefs.lab.backup.plist
@@ -73,8 +74,8 @@ lalu `unload` + `load` — launchd tidak membaca perubahan file secara otomatis.
 
 ## Catatan
 
-- Path di plist **absolut** (`/Users/rizkirmdhn/juicefs-lab/...`). Kalau folder
-  lab dipindah, sesuaikan dulu.
+- Plist memakai placeholder `__LAB_DIR__`. Perintah `sed` di atas menggantinya
+  dengan path folder ini. Kalau folder dipindah, pasang ulang agent-nya.
 - Jadwal akan gagal kalau OrbStack belum menyala saat itu. Kegagalan tercatat
   di `dumps/backup.log` dengan `exit code 1`, dan backup lama tidak tertimpa.
 - Kalau Mac tertidur saat jadwal, launchd menjalankannya begitu Mac bangun.
