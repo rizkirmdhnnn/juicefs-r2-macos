@@ -63,6 +63,8 @@ services:
       BACKUP_META:     ${BACKUP_META:-1h}
       ENABLE_SMB:      ${ENABLE_SMB:-true}
       ENABLE_WEBDAV:   ${ENABLE_WEBDAV:-false}
+      BACKUP_ON_STOP:  ${BACKUP_ON_STOP:-true}
+      KEEP_SHUTDOWN_DUMPS: ${KEEP_SHUTDOWN_DUMPS:-5}
     # TIDAK ada publish port. SMB (445) dan WebDAV (9007) tetap terjangkau dari
     # macOS lewat routing OrbStack di jfs-client.orb.local — tanpa membuka
     # apa pun ke jaringan WiFi. Publish port justru memaparkannya ke satu LAN

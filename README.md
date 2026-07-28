@@ -314,7 +314,32 @@ yang tidak muncul di pola JuiceFS.
 Ditangani JuiceFS sendiri lewat `--backup-meta 1h`. Tersimpan ter-gzip di
 `myjfs-r2/meta/`, rotasi berjenjang otomatis. Tidak perlu diapa-apakan.
 
-### Lapis 2 — dump lokal ke disk Mac (MANUAL)
+### Lapis 2 — dump otomatis saat container berhenti
+
+Setiap `docker compose down` / `stop`, entrypoint mem-`juicefs dump` ke
+`dumps/shutdown-YYYYMMDD-HHMMSS.json.gz` sebelum keluar.
+
+Kenapa perlu: `--backup-meta` hanya jalan tiap 1 jam. Kalau container dimatikan
+59 menit setelah backup terakhir, perubahan metadata di jendela itu **cuma ada
+di Redis**. Selama volume `redis-data` utuh tidak masalah — tapi kalau rusak
+atau kena `down -v`, perubahan itu hilang dan file yang dibuat di jendela itu
+jadi object yatim di R2.
+
+```env
+BACKUP_ON_STOP=true        # matikan dengan false
+KEEP_SHUTDOWN_DUMPS=5      # rotasi, simpan 5 terbaru
+```
+
+Dijalankan **setelah** umount supaya menangkap kondisi final. Diberi
+`timeout 60` agar tidak menahan shutdown melebihi `stop_grace_period`.
+Kalau Redis sudah mati duluan, gagal dengan peringatan — tidak menggantung.
+
+Diuji: `compose stop` 0,31 detik, `compose down` penuh 0,89 detik, keduanya
+menghasilkan dump valid.
+
+### Lapis 3 — dump manual / terjadwal
+
+`backup-meta.sh`
 
 `backup-meta.sh` — jalankan kapan saja:
 

@@ -23,6 +23,11 @@ WEBDAV_ADDR="${WEBDAV_ADDR:-0.0.0.0:9007}"
 ENABLE_SMB="${ENABLE_SMB:-true}"
 ENABLE_WEBDAV="${ENABLE_WEBDAV:-false}"
 
+# Dump metadata ke /dumps (disk Mac) tiap kali container berhenti dengan
+# bersih — menutup jendela antara backup otomatis terakhir dan saat mati.
+BACKUP_ON_STOP="${BACKUP_ON_STOP:-true}"
+KEEP_SHUTDOWN_DUMPS="${KEEP_SHUTDOWN_DUMPS:-5}"
+
 log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m    %s\033[0m\n' "$*"; }
 die()  { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -171,8 +176,41 @@ graceful_shutdown() {
   juicefs umount "$MOUNT_POINT" 2>/dev/null \
     || umount "$MOUNT_POINT" 2>/dev/null \
     || warn "mount sudah lepas / tidak bisa dilepas"
+
+  dump_on_shutdown
   log "Selesai"
   exit 0
+}
+
+# Dump metadata saat container berhenti.
+#
+# Kenapa perlu: --backup-meta hanya berjalan tiap $BACKUP_META (default 1 jam).
+# Kalau container dimatikan 59 menit setelah backup terakhir, perubahan
+# metadata di jendela itu cuma ada di Redis. Selama volume redis-data utuh
+# tidak masalah, tapi kalau rusak atau kena `down -v`, perubahan itu hilang.
+#
+# Dijalankan SETELAH umount supaya menangkap kondisi final — termasuk data
+# yang baru saja di-flush ke R2. `juicefs dump` bicara langsung ke Redis,
+# jadi tidak butuh mount.
+dump_on_shutdown() {
+  is_true "$BACKUP_ON_STOP" || { log "Dump saat berhenti dilewati (BACKUP_ON_STOP=$BACKUP_ON_STOP)"; return 0; }
+
+  local out="/dumps/shutdown-$(date '+%Y%m%d-%H%M%S').json"
+
+  # timeout: jangan sampai menahan shutdown melebihi stop_grace_period
+  if timeout 60 juicefs dump "$META_URL" "$out" >/dev/null 2>&1 && [ -s "$out" ]; then
+    gzip -f "$out" 2>/dev/null || true
+    log "Metadata di-dump: $(basename "$out").gz"
+  else
+    rm -f "$out" 2>/dev/null || true
+    warn "dump saat berhenti gagal — Redis mungkin sudah berhenti duluan"
+    return 0
+  fi
+
+  # Rotasi: simpan $KEEP_SHUTDOWN_DUMPS terbaru saja
+  ls -1t /dumps/shutdown-*.json.gz 2>/dev/null \
+    | tail -n "+$((KEEP_SHUTDOWN_DUMPS + 1))" \
+    | while read -r f; do rm -f "$f"; done
 }
 
 banner() {
@@ -195,7 +233,7 @@ banner() {
    Mount   : $MOUNT_POINT
    Meta    : $META_URL
    Trash   : $TRASH_DAYS hari
-   Backup  : otomatis tiap $BACKUP_META ke R2
+   Backup  : tiap $BACKUP_META ke R2 + saat berhenti ke /dumps
    SMB     : $smb_line
    WebDAV  : $webdav_line
 ==================================================
