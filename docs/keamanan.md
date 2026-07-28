@@ -74,7 +74,7 @@ serius, pertimbangkan:
 
 | Hal | Kondisi sekarang | Saran |
 |---|---|---|
-| Password SMB | default `juicefs123` | ganti di `.env` |
+| Password SMB | tidak ada default | wajib diisi di `.env` |
 | Redis | tanpa `requirepass` | aman selama hanya loopback; tambahkan kalau diekspos |
 | Redis | satu container, tanpa replika | pindah ke instance dengan persistence + replikasi |
 | Samba | berjalan sebagai root di container privileged | terima risikonya, atau ganti ke jalur akses lain |

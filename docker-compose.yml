@@ -53,10 +53,10 @@ services:
       R2_JURISDICTION: ${R2_JURISDICTION:-}
       CACHE_SIZE:      ${CACHE_SIZE:-10240}
       WEBDAV_USER:     ${WEBDAV_USER:-jfs}
-      WEBDAV_PASSWORD: ${WEBDAV_PASSWORD:-jfs}
+      WEBDAV_PASSWORD: ${WEBDAV_PASSWORD:-}
       WEBDAV_ADDR:     ${WEBDAV_ADDR:-0.0.0.0:9007}
       SMB_USER:        ${SMB_USER:-jfs}
-      SMB_PASSWORD:    ${SMB_PASSWORD:-juicefs123}
+      SMB_PASSWORD:    ${SMB_PASSWORD:-}
       # Dulu hardcoded di dalam entrypoint, sekarang bisa diatur dari sini
       META_URL:        ${META_URL:-redis://redis:6379/2}
       VOL_NAME:        ${VOL_NAME:-myjfs-r2}
