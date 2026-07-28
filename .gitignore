@@ -1,0 +1,45 @@
+# ── Kredensial ──────────────────────────────────────────────────────────
+# .env berisi Access Key & Secret Key R2 dan password SMB.
+# JANGAN PERNAH di-commit. Pakai .env.example sebagai template.
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ── Backup metadata ─────────────────────────────────────────────────────
+# Dump berisi seluruh struktur file system (nama file, ukuran, permission).
+# Bukan rahasia sekelas kredensial, tapi tidak ada gunanya di git dan
+# ukurannya tumbuh terus. Panduan restore tetap di-commit.
+dumps/*
+!dumps/CARA-RESTORE.md
+!dumps/.gitkeep
+
+# ── Jembatan file Mac ↔ container ───────────────────────────────────────
+# Isinya data kerja, bukan bagian dari project.
+shared/*
+!shared/.gitkeep
+
+# ── Sampah macOS ────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.TemporaryItems
+.DocumentRevisions-V100
+
+# ── Editor / IDE ────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.claude/
+
+# ── Log & berkas sementara ──────────────────────────────────────────────
+*.log
+*.tmp
+.tmp-*

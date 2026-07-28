@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.juicefs.lab.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/rizkirmdhn/juicefs-lab/backup-meta.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/rizkirmdhn/juicefs-lab</string>
+
+    <!-- Setiap hari pukul 12:00. Kalau Mac tertidur saat jadwal, launchd
+         menjalankannya begitu Mac bangun. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>12</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Jangan langsung jalan saat di-load / saat login -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/rizkirmdhn/juicefs-lab/dumps/launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/rizkirmdhn/juicefs-lab/dumps/launchd.log</string>
+
+    <!-- docker CLI ada di /usr/local/bin (OrbStack) -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

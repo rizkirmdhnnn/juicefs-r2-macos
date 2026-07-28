@@ -1,0 +1,74 @@
+name: juicefs-lab
+
+services:
+  # ── Metadata engine: struktur direktori, inode, mapping slice→block ─────
+  # Ini komponen paling kritis. Hilang = seluruh file system hilang,
+  # walaupun semua object masih utuh di R2. Backup rutin lewat `juicefs dump`.
+  redis:
+    image: redis:7-alpine
+    container_name: jfs-redis
+    command: redis-server --appendonly yes
+    ports:
+      # Diikat ke loopback saja. Tanpa "127.0.0.1:", Docker mengikat ke SEMUA
+      # interface — Redis tanpa password jadi terbuka ke seluruh WiFi, dan
+      # siapa pun bisa menghapus metadata (= semua data di R2 jadi tak terbaca).
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ── JuiceFS client → Cloudflare R2 ─────────────────────────────────────
+  juicefs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: juicefs-lab/client:1.4.0-samba
+    container_name: jfs-client
+    privileged: true            # dibutuhkan untuk FUSE di dalam container
+    devices:
+      - /dev/fuse
+    cap_add: [SYS_ADMIN]
+    security_opt: ["apparmor:unconfined"]
+    # Default Docker cuma 10 detik sebelum SIGKILL. Kalau saat `down` masih ada
+    # data di buffer tulis yang belum sampai R2 (~10 MB/s), 10 detik tidak cukup
+    # dan sisanya hilang permanen. 90 detik memberi ruang flush.
+    stop_grace_period: 90s
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - jfs-cache:/var/jfsCache   # cache baca lokal (LRU)
+      - ./shared:/shared          # folder Mac ↔ container
+      - ./dumps:/dumps            # tujuan `juicefs dump` (backup metadata)
+    environment:
+      # `:?` = compose berhenti dengan pesan jelas kalau nilainya kosong
+      R2_ACCOUNT_ID:   ${R2_ACCOUNT_ID:?belum diisi di .env (32 karakter hex, bukan URL)}
+      R2_BUCKET:       ${R2_BUCKET:?belum diisi di .env}
+      R2_ACCESS_KEY:   ${R2_ACCESS_KEY:?belum diisi di .env}
+      R2_SECRET_KEY:   ${R2_SECRET_KEY:?belum diisi di .env}
+      R2_JURISDICTION: ${R2_JURISDICTION:-}
+      CACHE_SIZE:      ${CACHE_SIZE:-10240}
+      WEBDAV_USER:     ${WEBDAV_USER:-jfs}
+      WEBDAV_PASSWORD: ${WEBDAV_PASSWORD:-jfs}
+      SMB_USER:        ${SMB_USER:-jfs}
+      SMB_PASSWORD:    ${SMB_PASSWORD:-juicefs123}
+      # Dulu hardcoded di dalam entrypoint, sekarang bisa diatur dari sini
+      META_URL:        ${META_URL:-redis://redis:6379/2}
+      VOL_NAME:        ${VOL_NAME:-myjfs-r2}
+      TRASH_DAYS:      ${TRASH_DAYS:-1}
+      BACKUP_META:     ${BACKUP_META:-1h}
+      ENABLE_SMB:      ${ENABLE_SMB:-true}
+      ENABLE_WEBDAV:   ${ENABLE_WEBDAV:-false}
+    # TIDAK ada publish port. SMB (445) dan WebDAV (9007) tetap terjangkau dari
+    # macOS lewat routing OrbStack di jfs-client.orb.local — tanpa membuka
+    # apa pun ke jaringan WiFi. Publish port justru memaparkannya ke satu LAN
+    # penuh dengan password lemah sebagai satu-satunya penghalang.
+    # Entrypoint ada di ./entrypoint.sh (di-COPY lewat Dockerfile).
+    # Edit file itu lalu: docker compose up -d --build juicefs
+volumes:
+  redis-data:
+  jfs-cache:
