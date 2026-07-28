@@ -54,6 +54,7 @@ services:
       CACHE_SIZE:      ${CACHE_SIZE:-10240}
       WEBDAV_USER:     ${WEBDAV_USER:-jfs}
       WEBDAV_PASSWORD: ${WEBDAV_PASSWORD:-jfs}
+      WEBDAV_ADDR:     ${WEBDAV_ADDR:-0.0.0.0:9007}
       SMB_USER:        ${SMB_USER:-jfs}
       SMB_PASSWORD:    ${SMB_PASSWORD:-juicefs123}
       # Dulu hardcoded di dalam entrypoint, sekarang bisa diatur dari sini

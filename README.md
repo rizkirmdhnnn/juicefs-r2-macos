@@ -137,11 +137,29 @@ Semua lewat `.env`:
 | `ENABLE_SMB` | `true` | server Samba |
 | `ENABLE_WEBDAV` | `false` | server WebDAV (cadangan) |
 | `SMB_USER` / `SMB_PASSWORD` | `jfs` / `juicefs123` | **ganti password-nya** |
+| `WEBDAV_USER` / `WEBDAV_PASSWORD` | `jfs` / `jfs` | dipakai kalau WebDAV menyala |
+| `WEBDAV_ADDR` | `0.0.0.0:9007` | alamat listen WebDAV |
 | `META_URL` | `redis://redis:6379/2` | metadata engine |
 | `VOL_NAME` | `myjfs-r2` | nama volume JuiceFS |
 
 `CACHE_SIZE` adalah knob paling berpengaruh ke performa. `TRASH_DAYS` selalu
 direkonsiliasi ke volume yang sudah ada, bukan hanya saat format.
+
+Kredensial hanya divalidasi untuk layanan yang menyala — kalau
+`ENABLE_WEBDAV=false`, `WEBDAV_USER`/`WEBDAV_PASSWORD` tidak wajib diisi.
+
+### Yang tidak bisa diatur dari `.env`
+
+`entrypoint.sh` juga membaca `CACHE_DIR` dan `MOUNT_POINT`, tapi keduanya
+**sengaja tidak diteruskan** lewat compose karena terikat ke berkas lain:
+
+| Variabel | Nilai tetap | Terikat pada |
+|---|---|---|
+| `CACHE_DIR` | `/var/jfsCache` | volume `jfs-cache` di `docker-compose.yml` |
+| `MOUNT_POINT` | `/mnt/jfs` | `path = /mnt/jfs` di `smb.conf` |
+
+Mengubahnya hanya lewat `.env` tidak akan berpengaruh. Kalau memang perlu,
+ubah juga berkas terkaitnya.
 
 ## Struktur project
 
