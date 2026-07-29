@@ -60,6 +60,40 @@ container.
 
 ---
 
+## Tuning buffer — hasil pengukuran
+
+Menyalin berkas 200 MB dari Finder lewat SMB, diukur dengan `juicefs stats`:
+
+| | buffer 128 MiB | buffer 300 MiB (default) | buffer 600 MiB |
+|---|---|---|---|
+| Waktu salin | 22,1 s | seimbang | **18,5 s** |
+| Puncak buffer | 132M — **penuh** | — | 204M — lapang |
+| `fuse write` puncak | 30M lalu **0** | — | **59M** |
+| RAM jfs-client | 86 MB | ~143 MB | **368 MB** |
+
+Kolom `fuse write` menjelaskan gejalanya. Saat buffer penuh, penulisan dari
+Finder **berhenti total** menunggu unggahan menguras isinya — inilah "kadang
+cepat kadang lambat" yang terasa saat menyalin berkas besar.
+
+Unggahan ke R2 sendiri memang tidak stabil (`object put` berayun 5–24 MB/s).
+Buffer besar **menyembunyikan** ketidakstabilan itu; buffer kecil
+**meneruskannya** langsung ke Finder.
+
+### Konsekuensi buffer besar
+
+Saat `cp` selesai, sebagian data masih di RAM dan **belum sampai R2**. Shutdown
+bersih menanganinya — `umount` menunggu flush tuntas — tapi kernel panic atau
+listrik padam tidak. Buffer kecil berarti lebih banyak data sudah aman di R2
+saat penyalinan dilaporkan selesai.
+
+### Kesimpulan
+
+300 MiB (default JuiceFS) adalah titik seimbang. 600 MiB memang lebih cepat
+16%, tapi 368 MB RAM menghapus seluruh manfaat penghematan.
+
+`--max-downloads 32` aman diturunkan dari default 200 — memengaruhi baca, dan
+pengukuran tidak menunjukkan penurunan pada koneksi rumahan.
+
 ## Biaya
 
 Tarif R2 (per Juli 2026):

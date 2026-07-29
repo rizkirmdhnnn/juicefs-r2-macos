@@ -14,6 +14,18 @@ VOL_NAME="${VOL_NAME:-myjfs-r2}"
 MOUNT_POINT="${MOUNT_POINT:-/mnt/jfs}"
 CACHE_DIR="${CACHE_DIR:-/var/jfsCache}"
 CACHE_SIZE="${CACHE_SIZE:-10240}"
+
+# Tuas performa/RAM.
+#   BUFFER_SIZE   tampungan tulis sebelum diunggah. Jangan diturunkan tanpa
+#                 mengukur: buffer yang penuh membuat penulisan dari Finder
+#                 BERHENTI menunggu unggahan menguras isinya. Terukur pada
+#                 berkas 200 MB — 128 MiB: 22,1 s; 600 MiB: 18,5 s (RAM 368 MB).
+#                 300 MiB (default JuiceFS) adalah titik seimbang.
+#   MAX_DOWNLOADS konkurensi baca; 32 cukup untuk koneksi rumahan.
+#   MAX_UPLOADS   naikkan untuk berkas multi-GB, tidak menambah RAM.
+BUFFER_SIZE="${BUFFER_SIZE:-300}"
+MAX_DOWNLOADS="${MAX_DOWNLOADS:-32}"
+MAX_UPLOADS="${MAX_UPLOADS:-20}"
 TRASH_DAYS="${TRASH_DAYS:-1}"
 BACKUP_META="${BACKUP_META:-1h}"
 WEBDAV_ADDR="${WEBDAV_ADDR:-0.0.0.0:9007}"
@@ -122,6 +134,9 @@ mount_juicefs() {
     --cache-dir "$CACHE_DIR" \
     --cache-size "$CACHE_SIZE" \
     --backup-meta "$BACKUP_META" \
+    --buffer-size "$BUFFER_SIZE" \
+    --max-downloads "$MAX_DOWNLOADS" \
+    --max-uploads "$MAX_UPLOADS" \
     --enable-xattr \
     --background
 }

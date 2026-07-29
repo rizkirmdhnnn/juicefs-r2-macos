@@ -52,6 +52,9 @@ services:
       R2_SECRET_KEY:   ${R2_SECRET_KEY:?belum diisi di .env}
       R2_JURISDICTION: ${R2_JURISDICTION:-}
       CACHE_SIZE:      ${CACHE_SIZE:-10240}
+      BUFFER_SIZE:     ${BUFFER_SIZE:-300}
+      MAX_DOWNLOADS:   ${MAX_DOWNLOADS:-32}
+      MAX_UPLOADS:     ${MAX_UPLOADS:-20}
       WEBDAV_USER:     ${WEBDAV_USER:-jfs}
       WEBDAV_PASSWORD: ${WEBDAV_PASSWORD:-}
       WEBDAV_ADDR:     ${WEBDAV_ADDR:-0.0.0.0:9007}

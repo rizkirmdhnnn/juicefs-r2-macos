@@ -159,6 +159,9 @@ Semua lewat `.env`:
 | `R2_SECRET_KEY` | — | wajib |
 | `R2_JURISDICTION` | kosong | `eu` atau `fedramp` |
 | `CACHE_SIZE` | `10240` | cache baca lokal, MiB |
+| `BUFFER_SIZE` | `300` | tampungan tulis, MiB — jangan diturunkan tanpa mengukur |
+| `MAX_DOWNLOADS` | `32` | konkurensi baca (default JuiceFS 200) |
+| `MAX_UPLOADS` | `20` | konkurensi tulis; naikkan untuk berkas multi-GB |
 | `TRASH_DAYS` | `1` | masa simpan berkas terhapus |
 | `BACKUP_META` | `1h` | interval backup otomatis ke R2; `0` mematikan |
 | `BACKUP_ON_STOP` | `true` | dump metadata saat container berhenti |
