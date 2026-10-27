@@ -9,21 +9,23 @@ berjalan — berbeda dari sebelumnya, ketika folder ini hanya berisi template.
 | `com.juicefs.lab.backup.plist` | `com.juicefs.lab.backup` | dump metadata ke `dumps/` tiap hari 12:00 |
 
 ```bash
+./launchd/install.sh              # pasang / segarkan
 launchctl list | grep juicefs     # status
-tail -f ../dumps/mount.log        # log mount
-tail ../dumps/backup.log          # log backup
+tail -f ~/.local/share/juicefs-lab/dumps/mount.log   # log mount
+tail ~/.local/share/juicefs-lab/dumps/backup.log     # log backup
 ```
 
 ## Agent mount
 
-Menjalankan [`../mount-native.sh`](../mount-native.sh).
+Menjalankan [`../mount-native.sh`](../mount-native.sh), disalin ke
+`~/.local/share/juicefs-lab/mount-native.sh` oleh `install.sh`.
 
 | Setelan | Nilai | Alasan |
 |---|---|---|
 | `RunAtLoad` | `true` | mount begitu login |
 | `KeepAlive` | `true` | proses mati → launchd memasang ulang |
 | `ThrottleInterval` | 30 detik | mencegah putaran cepat kalau Redis mati lama |
-| Log | `dumps/mount.log` | |
+| Log | `~/.local/share/juicefs-lab/dumps/mount.log` | |
 
 Dua hal yang membuatnya bekerja:
 
@@ -49,7 +51,7 @@ Uji tanpa menunggu jadwal:
 
 ```bash
 launchctl start com.juicefs.lab.backup
-tail dumps/backup.log
+tail ~/.local/share/juicefs-lab/dumps/backup.log
 ```
 
 ## Mengubah jadwal
@@ -76,27 +78,47 @@ perubahan berkas secara otomatis.
 
 ## Memasang ulang
 
-Path ditulis absolut ke dalam plist, jadi setiap kali folder lab dipindahkan
-atau plist diedit:
+Path ditulis absolut ke dalam plist, jadi jangan menunjuk berkas di dalam repo.
+Kalau yang ditunjuk adalah berkas di repo, setiap kali folder repo dipindah,
+di-rename, atau di-clone ulang, mount mati diam-diam — launchd hanya mencatat
+exit 127 (`No such file or directory`) berulang di log tanpa memberi tahu
+siapa pun. Itu pernah terjadi: folder lab dipindah ke `~/Documents/Code`, mount
+hilang ~35 jam sebelum ketahuan.
+
+Karena itu skrip **disalin keluar repo** ke lokasi tetap:
+
+```
+~/.local/share/juicefs-lab/
+├── .env              # kredensial, mode 600, tidak pernah masuk git
+├── mount-native.sh
+├── backup-meta.sh
+└── dumps/            # log + backup metadata
+```
+
+Repo tetap jadi sumber aslinya. Pasang atau segarkan salinannya dengan:
 
 ```bash
-cd ~/juicefs-lab
-for f in mount backup; do
-  sed "s|__LAB_DIR__|$PWD|g" "launchd/com.juicefs.lab.$f.plist" \
-    > ~/Library/LaunchAgents/com.juicefs.lab.$f.plist
-  plutil -lint ~/Library/LaunchAgents/com.juicefs.lab.$f.plist
-  launchctl unload ~/Library/LaunchAgents/com.juicefs.lab.$f.plist 2>/dev/null
-  launchctl load   ~/Library/LaunchAgents/com.juicefs.lab.$f.plist
-done
+./launchd/install.sh
 ```
+
+Skrip itu idempoten — aman dijalankan berulang. Yang dilakukannya:
+
+1. menyalin `mount-native.sh` dan `backup-meta.sh` ke `~/.local/share/juicefs-lab/`
+2. menyalin `.env` **hanya kalau belum ada**, jadi setelan lokal tidak tertimpa
+3. men-`sed` placeholder `__LAB_DIR__` di template plist menjadi path runtime itu
+4. `launchctl unload` lalu `load` kedua agent
+
+Setiap kali skrip di repo diubah, jalankan ulang `install.sh` untuk menyegarkan
+salinan yang dipakai launchd.
 
 ## Mencopot
 
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.juicefs.lab.mount.plist
-launchctl unload ~/Library/LaunchAgents/com.juicefs.lab.backup.plist
-rm ~/Library/LaunchAgents/com.juicefs.lab.{mount,backup}.plist
+./launchd/install.sh --uninstall
 ```
+
+Data di `~/.local/share/juicefs-lab/` sengaja **tidak** dihapus — di situ ada
+`.env` dan seluruh backup metadata. Hapus manual kalau memang tidak diperlukan.
 
 Mencopot agent mount **tidak** melepas volume yang sedang ter-mount — jalankan
 `juicefs umount ~/jfs` sesudahnya.
@@ -105,5 +127,5 @@ Mencopot agent mount **tidak** melepas volume yang sedang ter-mount — jalankan
 ## Catatan
 
 - Backup gagal keras (exit 1) kalau metadata engine tidak terjangkau, dan backup
-  lama **tidak** tertimpa. Tercatat di `dumps/backup.log`.
+  lama **tidak** tertimpa. Tercatat di `~/.local/share/juicefs-lab/dumps/backup.log`.
 - Kalau Mac tertidur saat jadwal, launchd menjalankannya begitu Mac bangun.

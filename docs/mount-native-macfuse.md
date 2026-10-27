@@ -569,7 +569,7 @@ Diuji: `juicefs umount ~/jfs` → **dipasang ulang otomatis dalam 17 detik**.
 
 ```bash
 launchctl list | grep juicefs      # lihat status
-tail -f dumps/mount.log            # log mount
+tail -f ~/.local/share/juicefs-lab/dumps/mount.log   # log mount
 ```
 
 ---

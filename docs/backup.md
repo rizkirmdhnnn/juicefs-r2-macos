@@ -75,8 +75,12 @@ Matikan lewat `BACKUP_ON_STOP=false` di `.env`.
 
 ```bash
 ./backup-meta.sh          # backup sekarang
-tail dumps/backup.log     # riwayat
+tail ~/.local/share/juicefs-lab/dumps/backup.log   # riwayat
 ```
+
+Saat dijalankan lewat LaunchAgent, skrip dan `.env`-nya disalin ke
+`~/.local/share/juicefs-lab/` (lihat [`launchd/README.md`](../launchd/README.md)),
+jadi `dumps/` di repo tidak lagi dipakai untuk log maupun backup harian.
 
 **Kenapa perlu:** lapis 1 tersimpan di **bucket yang sama** dengan datanya.
 Kalau akun R2 bermasalah, kredensial bocor, atau bucket terhapus, backup ikut

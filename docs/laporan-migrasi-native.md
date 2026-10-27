@@ -305,7 +305,8 @@ redis   started   rizkirmdhn  ~/Library/LaunchAgents/homebrew.mxcl.redis.plist
 
 | Gejala | Kemungkinan | Tindakan |
 |---|---|---|
-| `~/jfs` kosong / hilang dari Finder | agent mati atau Redis belum siap | `tail dumps/mount.log`, lalu `launchctl kickstart -k gui/$(id -u)/com.juicefs.lab.mount` |
+| `~/jfs` kosong / hilang dari Finder | agent mati atau Redis belum siap | `tail ~/.local/share/juicefs-lab/dumps/mount.log`, lalu `launchctl kickstart -k gui/$(id -u)/com.juicefs.lab.mount` |
+| `launchctl list` menunjukkan exit **127** | plist menunjuk berkas yang tidak ada — biasanya karena folder repo dipindah | jalankan ulang `./launchd/install.sh` |
 | `connection refused` | Redis tidak jalan | `brew services restart redis` |
 | Volume ter-mount tapi berkas gagal dibaca | secret key belum terpasang | `juicefs config redis://127.0.0.1:6379/2 --secret-key "$R2_SECRET_KEY"` |
 | Muncul berkas `._namafile` | `--enable-xattr` tidak aktif | cek flag di `mount-native.sh` |

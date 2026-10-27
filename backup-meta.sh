@@ -15,7 +15,16 @@ LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DUMPS="$LAB_DIR/dumps"
 LOG="$DUMPS/backup.log"
 
-META_URL="${META_URL:-redis://127.0.0.1:6379/2}"
+# launchd memberi PATH minimal — juicefs dan redis dari Homebrew tidak ikut.
+PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"; export PATH
+
+# Ambil setelan dari .env kalau ada. Skrip ini jalan di macOS (native), jadi
+# yang dipakai META_URL_NATIVE — META_URL di .env menunjuk `redis:6379`, nama
+# host yang hanya bisa di-resolve dari dalam jaringan Docker.
+if [ -f "$LAB_DIR/.env" ]; then
+  set -a; . "$LAB_DIR/.env"; set +a
+fi
+META_URL="${META_URL_NATIVE:-redis://127.0.0.1:6379/2}"
 
 KEEP_DAILY=7      # simpan 7 backup harian terakhir
 KEEP_WEEKLY=4     # simpan 4 backup mingguan terakhir
