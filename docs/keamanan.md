@@ -65,6 +65,47 @@ untuk seluruh akun memberi akses jauh lebih luas daripada yang dibutuhkan.
 artinya kamu harus menyimpan `.env` di tempat aman secara terpisah, karena
 backup metadata saja tidak cukup untuk memulihkan volume.
 
+### Mengganti user atau password SMB
+
+`.env` adalah satu-satunya tempat yang perlu disentuh. Akun Samba dibangun
+ulang dari `SMB_USER`/`SMB_PASSWORD` tiap container start, dan passdb-nya ada
+di layer container (bukan volume), jadi akun lama ikut hilang sendiri saat
+recreate — tidak ada yang perlu dibersihkan manual di dalam container.
+
+```bash
+cd ~/juicefs-lab
+
+# 1. Lepas mount dulu, selama masih memakai kredensial lama
+umount ~/mnt/jfs
+
+# 2. Buang entri Keychain lama
+security delete-internet-password -s jfs-client.orb.local
+
+# 3. Ubah SMB_USER / SMB_PASSWORD
+$EDITOR .env
+
+# 4. Recreate container
+docker compose up -d
+```
+
+Lalu mount kembali seperti biasa.
+
+**Langkah 2 adalah yang paling sering terlewat.** Keychain macOS menyimpan
+kredensial SMB per host dan tidak ikut berubah saat `.env` diubah. Kalau entri
+lama dibiarkan, Finder diam-diam mengirimkan username lama dan kamu mendapat
+penolakan autentikasi meski `.env` sudah benar — gejalanya mengarahkan dugaan
+ke container, padahal sumbernya ada di Mac.
+
+**Gunakan `up -d`, bukan `restart`.** Variabel environment dibekukan saat
+container dibuat, jadi `docker compose restart` menjalankan ulang entrypoint
+dengan `SMB_USER` yang lama dan membuat perubahan `.env` seolah tidak
+berpengaruh. `up -d` mendeteksi perubahan config lalu me-recreate — dan
+recreate itulah yang sekalian menghapus passdb lama.
+
+`--build` hanya perlu kalau yang diubah `entrypoint.sh`, `smb.conf`, atau
+`Dockerfile`, karena ketiganya di-`COPY` ke dalam image. Untuk perubahan `.env`
+saja, `up -d` sudah cukup.
+
 ---
 
 ## Pengerasan yang belum dilakukan

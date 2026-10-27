@@ -59,6 +59,16 @@ require_env() {
   done
 }
 
+# Nama user mengalir ke `useradd` dan `smbpasswd`, jadi disaring sekali di
+# depan. Tanpa ini nilai aneh dari .env baru ketahuan sebagai error Samba
+# yang membingungkan, jauh dari sumbernya.
+require_username() {
+  local v="$1"
+  case "${!v}" in
+    *[!a-zA-Z0-9._-]*|"") die "$v hanya boleh huruf, angka, titik, garis bawah, dan strip — cek file .env" ;;
+  esac
+}
+
 # ── Endpoint R2 ─────────────────────────────────────────────────────────
 r2_endpoint() {
   if [ -n "${R2_JURISDICTION:-}" ]; then
@@ -264,6 +274,7 @@ main() {
   # bagian awal bisa menghentikan skrip secara tak sengaja.
   if is_true "$ENABLE_SMB"; then
     require_env SMB_USER SMB_PASSWORD
+    require_username SMB_USER
   fi
   if is_true "$ENABLE_WEBDAV"; then
     require_env WEBDAV_USER WEBDAV_PASSWORD

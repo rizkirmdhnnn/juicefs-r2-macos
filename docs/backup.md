@@ -9,6 +9,18 @@ block dari object storage saja.
 
 Repo ini memasang tiga lapis.
 
+> **Sejak pindah ke jalur native (29 Juli 2026), susunannya berubah:**
+>
+> | Lapis | Status di jalur native |
+> |---|---|
+> | 1 — tiap jam ke R2 | tetap jalan, sekarang dari client native (`mount-native.sh`) |
+> | 2 — saat container berhenti | **hilang** — `entrypoint.sh` tidak lagi dipakai |
+> | 3 — harian ke disk | tetap jalan, dan agent launchd-nya kini **dipasang** untuk menutup lubang lapis 2 |
+>
+> `backup-meta.sh` sudah tidak memakai `docker compose exec`; ia memanggil
+> `juicefs dump` langsung ke `META_URL_NATIVE`. Rinciannya di
+> [Mount native lewat macFUSE](mount-native-macfuse.md#yang-mengambil-alih-tugas-container).
+
 ---
 
 ## Lapis 1 — ke R2, tiap jam

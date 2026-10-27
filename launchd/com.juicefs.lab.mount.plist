@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.juicefs.lab.mount</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__LAB_DIR__/mount-native.sh</string>
+  </array>
+
+  <!-- Mount saat login. Skrip menunggu Redis sendiri, jadi urutan start
+       terhadap homebrew.mxcl.redis tidak perlu dijamin launchd. -->
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Proses juicefs berjalan di foreground; kalau mati (crash, atau volume
+       dilepas paksa), launchd menghidupkannya lagi. -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Jeda sebelum restart, supaya tidak berputar cepat kalau Redis mati
+       lebih lama dari batas tunggu di skrip. -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>__LAB_DIR__/dumps/mount.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LAB_DIR__/dumps/mount.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+</dict>
+</plist>

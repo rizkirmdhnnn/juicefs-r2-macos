@@ -23,6 +23,27 @@ Selisih baca dingin vs hangat: **42×**. Performa JuiceFS nyaris seluruhnya
 ditentukan cache hit rate, bukan kecepatan object storage. `CACHE_SIZE` adalah
 pengaturan paling berharga di `.env`.
 
+> **Catatan belakangan:** angka 357 MB/s kemungkinan mengandung bias page cache
+> macOS. Diukur ulang pada berkas 166 MiB, pembacaan "hangat" lewat `dd`
+> menghasilkan 8–15 **GB/s** — jelas dilayani RAM, sementara membaca berkas
+> cache langsung dari SSD hanya 921 MiB/s. Memisahkan cache disk dari page
+> cache butuh `sudo purge` sebelum tiap sampel.
+> Rinciannya di [Mount native lewat macFUSE](mount-native-macfuse.md#baca-kedua-warm-tidak-terukur-dengan-metode-ini).
+
+### Baca dingin: native macFUSE vs SMB
+
+Diukur 9 sampel per jalur pada berkas 166,3 MiB, cache kedua client dikosongkan
+sebelum tiap sampel:
+
+| | Native macFUSE | SMB |
+|---|---|---|
+| Median | 15,0 MiB/s | **16,4 MiB/s** |
+| Sebaran (maks÷min) | 2,41× | **1,26×** |
+
+**Mount native tidak lebih cepat** — bottleneck-nya link ke R2, bukan lapisan
+protokol. Metode dan pembahasan lengkap di
+[Mount native lewat macFUSE](mount-native-macfuse.md#performa-native-vs-smb-).
+
 ### Metadata tidak terpengaruh jarak
 
 `Stat berkas` 29.557 ops/s dan `Update metadata` 0,88 ms — sama sekali tidak
@@ -31,6 +52,19 @@ terpengaruh oleh data yang ada di seberang lautan, karena dilayani Redis lokal.
 Inilah keuntungan arsitektur pemisahan data/metadata: `ls`, `stat`, `find`,
 dan `du` tetap ngebut walaupun datanya di Cloudflare. s3fs tidak bisa
 memberikan ini.
+
+Tapi jarak ke Redis tetap terasa. Diukur dari client native di macOS, 4.945
+entri dengan cache metadata dimatikan:
+
+| Metadata engine | stat/s |
+|---|---|
+| Redis di container (port-forward OrbStack) | 634 |
+| Redis brew, jalan langsung di macOS | **871** |
+
+**1,37× lebih cepat.** Menaikkan versi Redis 7→8 tidak mengubah apa pun (633 vs
+634) — seluruh selisihnya dari hop container. Berpengaruh untuk beban `find`,
+`ls`, dan berkas kecil; tidak berpengaruh untuk berkas besar.
+[Metode dan jebakannya](mount-native-macfuse.md#redis-native-brew-vs-redis-lewat-orbstack-).
 
 ### Hasil `juicefs bench` penuh
 

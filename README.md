@@ -6,6 +6,14 @@ jaringan — **tanpa macFUSE, tanpa kernel extension, tanpa reboot**.
 Semuanya berjalan di Docker. Isi kredensial R2, jalankan satu perintah, volume
 muncul di Finder.
 
+> **Ada dua jalur di repo ini.** Yang dijelaskan di bawah adalah jalur Docker +
+> SMB: paling mudah dipasang, tidak menyentuh kernel. Jalur kedua memasang
+> macFUSE dan me-mount langsung di macOS dengan Redis dari Homebrew — butuh
+> Recovery Mode dan dua kali reboot, **tidak lebih cepat untuk berkas besar**,
+> tapi metadata 1,37× lebih gesit dan volumenya muncul sebagai disk di Finder.
+> Prosedur, pengukuran, dan cara migrasinya ada di
+> [Mount native lewat macFUSE](docs/mount-native-macfuse.md).
+
 ```
 Finder (macOS)
    │  SMB
@@ -268,6 +276,8 @@ Wajar — bottleneck-nya R2, bukan protokol. Untuk berkas besar, salin lewat
 | [Backup metadata](docs/backup.md) | tiga lapis backup, prosedur pemulihan, format dump |
 | [Keamanan](docs/keamanan.md) | paparan port, kredensial, pengerasan |
 | [Performa dan biaya](docs/performa-dan-biaya.md) | angka pengukuran, tarif R2 vs S3, batasan penskalaan |
+| [Mount native lewat macFUSE](docs/mount-native-macfuse.md) | jalur alternatif tanpa Samba — kenapa butuh kext, prosedur Recovery Mode, jebakan kext yang "hilang" tiap reboot |
+| [Laporan migrasi ke native](docs/laporan-migrasi-native.md) | daftar perubahan 29 Juli 2026: apa yang disentuh di sistem, apa di repo, apa yang tidak, dan cara membatalkan |
 
 ## Rujukan
 

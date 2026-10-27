@@ -14,7 +14,8 @@ set -euo pipefail
 LAB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DUMPS="$LAB_DIR/dumps"
 LOG="$DUMPS/backup.log"
-META_URL="${META_URL:-redis://redis:6379/2}"
+
+META_URL="${META_URL:-redis://127.0.0.1:6379/2}"
 
 KEEP_DAILY=7      # simpan 7 backup harian terakhir
 KEEP_WEEKLY=4     # simpan 4 backup mingguan terakhir
@@ -24,14 +25,20 @@ log() { printf '%s  %s\n' "$(date '+%F %T')" "$*" | tee -a "$LOG"; }
 
 cd "$LAB_DIR"
 
-# ── Pastikan container hidup ────────────────────────────────────────────
-if ! docker compose ps --status running --format '{{.Name}}' 2>/dev/null | grep -q '^jfs-client$'; then
-  log "GAGAL: container jfs-client tidak berjalan — backup dilewati"
+# ── Pastikan metadata engine terjangkau ─────────────────────────────────
+# Dulu ini memeriksa container jfs-client. Sejak metadata pindah ke Redis
+# native (brew services), yang perlu hidup cuma Redis di 127.0.0.1:6379 —
+# tidak perlu Docker sama sekali.
+if ! command -v juicefs >/dev/null 2>&1; then
+  log "GAGAL: juicefs tidak ada di PATH"
+  exit 1
+fi
+if ! juicefs status "$META_URL" >/dev/null 2>&1; then
+  log "GAGAL: metadata engine tidak terjangkau di $META_URL — backup dilewati"
   exit 1
 fi
 
 STAMP="$(date '+%Y-%m-%d')"
-TMP_IN_CONTAINER="/dumps/.tmp-${STAMP}.json"
 TMP_ON_HOST="$DUMPS/.tmp-${STAMP}.json"
 FINAL="$DUMPS/meta-${STAMP}.json.gz"
 
@@ -39,7 +46,7 @@ cleanup() { rm -f "$TMP_ON_HOST" "$TMP_ON_HOST.gz" 2>/dev/null || true; }
 trap cleanup EXIT
 
 # ── Dump ────────────────────────────────────────────────────────────────
-if ! docker compose exec -T juicefs juicefs dump "$META_URL" "$TMP_IN_CONTAINER" >/dev/null 2>&1; then
+if ! juicefs dump "$META_URL" "$TMP_ON_HOST" >/dev/null 2>&1; then
   log "GAGAL: juicefs dump error"
   exit 1
 fi
